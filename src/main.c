@@ -12,17 +12,11 @@
 #define BACKLOG 5
 #define BUFFER_SIZE 1024
 
-int main(int argc, char *argv[])
-{
-    struct addrinfo hints, *res;   
-    struct sockaddr_storage client_addr;
-    socklen_t addr_size;
-    int sockfd, connection_sockfd, status;
-
-    if (argc != 2) {
-        fprintf(stderr,"usage: main [port number]\n");
-        exit(1);
-    }
+// create, bind, and listen on socket.
+// returns socket descriptor
+int setup_server(const char *port) {
+    struct addrinfo hints, *res;
+    int sockfd, status;
 
     // load address structs
     memset(&hints, 0, sizeof hints);
@@ -30,11 +24,11 @@ int main(int argc, char *argv[])
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE; // fill in IP
 
-    status = getaddrinfo(NULL, argv[1], &hints, &res);
+    status = getaddrinfo(NULL, port, &hints, &res);
 
     if (status != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
-        exit(EXIT_FAILURE);
+        exit(1);
     }
 
     // make socket
@@ -42,13 +36,15 @@ int main(int argc, char *argv[])
 
     if (sockfd == -1) {
         perror("socket() failure");
-        exit(EXIT_FAILURE);
+        exit(1);
     }
 
-    // to avoid "Address already in use"
+    // set SO_RESUSEADDR to avoid "Address already in use"
     int yes = 1;
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1) {
         perror("setsockopt");
+        freeaddrinfo(res);
+        close(sockfd);
         exit(1);
     } 
 
@@ -57,18 +53,62 @@ int main(int argc, char *argv[])
         perror("bind() failure");
         freeaddrinfo(res);
         close(sockfd);
-        exit(EXIT_FAILURE);
+        exit(1);
     }
 
+    // done with res
     freeaddrinfo(res);
 
     // listen on port
     if (listen(sockfd, BACKLOG) == -1) {
         perror("listen() failure");
-        exit(EXIT_FAILURE);
+        exit(1);
     }
 
-    printf("Server is listening on port %s...\n", argv[1]);
+    printf("Server is listening on port %s...\n", port);
+    return sockfd;
+}
+
+// handles a single client connection
+void handle_client(int connection_sockfd) {
+    char buffer[BUFFER_SIZE];
+    
+    int bytes_received = recv(connection_sockfd, buffer, BUFFER_SIZE - 1, 0);
+    
+    if (bytes_received == -1) {
+        perror("recv() failure");
+        close(connection_sockfd);
+        return;
+    } else if (bytes_received == 0) {
+        printf("Client disconnected.\n");
+    } else if (bytes_received > 0) {
+        buffer[bytes_received] = '\0';  // null-terminate received data
+        printf("Received from client: %s\n", buffer);
+    }
+
+    char *msg = "online!";
+
+    if (send(connection_sockfd, msg, strlen(msg), 0) == -1) {
+        perror("send() failure");
+        close(connection_sockfd);
+        return;
+    }
+
+    close(connection_sockfd);
+}
+
+int main(int argc, char *argv[])
+{
+    if (argc != 2) {
+        fprintf(stderr,"usage: main [port number]\n");
+        exit(1);
+    }
+
+    struct sockaddr_storage client_addr;
+    socklen_t addr_size;
+
+    int sockfd = setup_server(argv[1]);
+    int connection_sockfd;
 
     while (1) {
         // accept connection
@@ -77,37 +117,14 @@ int main(int argc, char *argv[])
 
         if (connection_sockfd == -1) {
             perror("accept() failure");
-            exit(EXIT_FAILURE);
-        }
-
-        char buffer[BUFFER_SIZE];
-        int bytes_received = recv(connection_sockfd, buffer, BUFFER_SIZE - 1, 0);
-        
-        if (bytes_received == -1) {
-            perror("recv() failure");
-            close(connection_sockfd);
             close(sockfd);
-            exit(EXIT_FAILURE);
-        } else if (bytes_received == 0) {
-            printf("Client disconnected.\n");
-        } else if (bytes_received > 0) {
-            buffer[bytes_received] = '\0';  // null-terminate received data
-            printf("Received from client: %s\n", buffer);
+            exit(1);
         }
 
-        char *msg = "online!";
-
-        if (send(connection_sockfd, msg, strlen(msg), 0) == -1) {
-            perror("send() failure");
-            close(connection_sockfd);
-            close(sockfd);
-            exit(EXIT_FAILURE);
-        }
-
-        close(connection_sockfd);
+        handle_client(connection_sockfd);
     }
     
     close(sockfd);
-
+    printf("Server shutting down....\n");
     return 0;
 }
