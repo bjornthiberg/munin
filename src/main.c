@@ -15,7 +15,7 @@
 // create, bind, and listen on socket.
 // returns socket descriptor
 int setup_server(const char *port) {
-    struct addrinfo hints, *res;
+    struct addrinfo hints, *res, *p;
     int sockfd, status;
 
     // load address structs
@@ -31,29 +31,28 @@ int setup_server(const char *port) {
         exit(1);
     }
 
-    // make socket
-    sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    // loop through results, bind to first available
+    for(p = res; p != NULL; p = p->ai_next) {
+        sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (sockfd == -1) {
+            perror("server: socket");
+            continue;
+        }
 
-    if (sockfd == -1) {
-        perror("socket() failure");
-        exit(1);
-    }
+        int yes = 1;
+        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1) {
+            perror("setsockopt");
+            close(sockfd);
+            exit(1);
+        }
 
-    // set SO_RESUSEADDR to avoid "Address already in use"
-    int yes = 1;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1) {
-        perror("setsockopt");
-        freeaddrinfo(res);
-        close(sockfd);
-        exit(1);
-    } 
+        if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+            close(sockfd);
+            perror("server: bind");
+            continue;
+        }
 
-    // bind socket to port
-    if (bind(sockfd, res->ai_addr, res->ai_addrlen) == -1) {
-        perror("bind() failure");
-        freeaddrinfo(res);
-        close(sockfd);
-        exit(1);
+        break;
     }
 
     // done with res
