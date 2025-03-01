@@ -68,6 +68,21 @@ int setup_server(const char *port) {
     return sockfd;
 }
 
+// builds a dummy http response message
+void get_http_response(char *buffer, size_t buffer_size) {
+    char *status_line = "HTTP/1.0 200 OK";
+    char *content_type_header = "Content-Type: text/html";
+    char *html_body = "<html><body>hello world</body></html>";
+    int html_body_length = strlen(html_body);
+
+    // create Content-Length Header
+    char content_length_header[50];
+    snprintf(content_length_header, sizeof(content_length_header), "Content-Length: %d", html_body_length);
+
+    // build response
+    snprintf(buffer, buffer_size, "%s\r\n%s\r\n%s\r\n\r\n%s", status_line, content_type_header, content_length_header, html_body);
+}
+
 // handles a single client connection
 void handle_client(int connection_sockfd) {
     char buffer[BUFFER_SIZE];
@@ -85,9 +100,10 @@ void handle_client(int connection_sockfd) {
         printf("Received from client: %s\n", buffer);
     }
 
-    char *msg = "online!";
+    char http_response[1000];
+    get_http_response(http_response, sizeof(http_response));
 
-    if (send(connection_sockfd, msg, strlen(msg), 0) == -1) {
+    if (send(connection_sockfd, http_response, strlen(http_response), 0) == -1) {
         perror("send() failure");
         close(connection_sockfd);
         return;
