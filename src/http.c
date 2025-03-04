@@ -10,36 +10,6 @@
 #define RESPONSE_BUFFER_SIZE 1024
 #define REQUEST_LINE_MAX_LENGTH 100
 
-// builds a dummy http response message
-void get_ok_http_response(char *buffer, size_t buffer_size) {
-    char *status_line = "HTTP/1.0 200 OK";
-    char *content_type_header = "Content-Type: text/html";
-    char *html_body = "<html><body>hello world</body></html>";
-    int html_body_length = strlen(html_body);
-
-    // create Content-Length Header
-    char content_length_header[50];
-    snprintf(content_length_header, sizeof(content_length_header), "Content-Length: %d", html_body_length);
-
-    // build response
-    snprintf(buffer, buffer_size, "%s\r\n%s\r\n%s\r\n\r\n%s", status_line, content_type_header, content_length_header, html_body);
-}
-
-// build 400 bad request response
-void get_bad_request_http_response(char *buffer, size_t buffer_size) {
-    char *status_line = "HTTP/1.0 400 BAD REQUEST";
-
-    // build response
-    snprintf(buffer, buffer_size, "%s\r\n", status_line);
-}
-
-void get_not_implemented_http_response(char *buffer, size_t buffer_size) {
-    char *status_line = "HTTP/1.0 501 NOT IMPLEMENTED";
-
-    // build response
-    snprintf(buffer, buffer_size, "%s\r\n", status_line);
-}
-
 // get HTTP response status code based on request
 enum status_code get_response_status_code(char *client_buffer) {
     // get first line
@@ -74,6 +44,34 @@ enum status_code get_response_status_code(char *client_buffer) {
     return BAD_REQUEST;
 }
 
+// sets buffer to HTTP response, based on response status code
+void set_http_response(char *buffer, size_t buffer_size, enum status_code response_status_code) {
+    char *status_line = NULL;
+
+    if (response_status_code == OK) {
+        status_line = "HTTP/1.0 200 OK";
+        char *content_type_header = "Content-Type: text/html";
+        char *html_body = "<html><body>hello world</body></html>";
+        int html_body_length = strlen(html_body);
+    
+        // create Content-Length Header
+        char content_length_header[50];
+        snprintf(content_length_header, sizeof(content_length_header), "Content-Length: %d", html_body_length);
+    
+        // set buffer to HTTP response
+        snprintf(buffer, buffer_size, "%s\r\n%s\r\n%s\r\n\r\n%s", status_line, content_type_header, content_length_header, html_body);
+        return;
+    
+    } else if (response_status_code == BAD_REQUEST) {
+        status_line = "HTTP/1.0 400 BAD REQUEST";
+    
+    } else if (response_status_code == NOT_IMPLEMENTED) {
+        status_line = "HTTP/1.0 501 NOT IMPLEMENTED";
+    }
+
+    snprintf(buffer, buffer_size, "%s\r\n", status_line);
+}
+
 // handles a single client connection
 void handle_client(int connection_sockfd) {
     char client_buffer[CLIENT_BUFFER_SIZE];
@@ -93,22 +91,12 @@ void handle_client(int connection_sockfd) {
     // Parse request Status-Line
     enum status_code status_code_result = get_response_status_code(client_buffer);
 
-    char http_response[RESPONSE_BUFFER_SIZE];
+    char http_response_buffer[RESPONSE_BUFFER_SIZE];
 
     // build http response based on status code result
-    switch (status_code_result) {
-        case OK: 
-            get_ok_http_response(http_response, sizeof(http_response));
-            break;
-        case BAD_REQUEST:
-            get_bad_request_http_response(http_response, sizeof(http_response));
-            break;
-        case NOT_IMPLEMENTED:
-            get_not_implemented_http_response(http_response, sizeof(http_response));
-            break;
-    }    
+    set_http_response(http_response_buffer, sizeof(http_response_buffer), status_code_result);    
 
-    if (send(connection_sockfd, http_response, strlen(http_response), 0) == -1) {
+    if (send(connection_sockfd, http_response_buffer, strlen(http_response_buffer), 0) == -1) {
         perror("send() failure");
         close(connection_sockfd);
         return;
